@@ -1,128 +1,211 @@
 # Virtual-Block-Storage-Device
-1. Project Overview
-This project simulates a block storage device and its corresponding device driver layer using Python.
-The goal is to demonstrate understanding of low-level system design concepts such as block-based I/O, device drivers, error handling, and storage state management — without interacting with real hardware.
-The implementation mirrors how an operating system communicates with storage hardware through a driver abstraction.
-2. Design Philosophy
-The system is intentionally split into two layers:
-Virtual Device Layer
-Simulates raw storage hardware that operates strictly on fixed-size blocks.
-Device Driver Layer
-Acts as a controller between user-level requests (byte offsets and sizes) and the low-level device operations.
-This separation reflects real-world OS architecture and enforces clean responsibility boundaries.
-3. Storage Model
-3.1 Device Characteristics
-Property	Value
-Total Size	8 MB
-Block Size	4096 bytes (4 KB)
-Total Blocks	2048
-Backend	Python bytearray
-The entire storage space is represented as a contiguous byte array:
-bytearray(8 * 1024 * 1024)
-3.2 Block States
-Each block maintains a state to simulate real storage behavior:
-State	Description
-FREE	Block has never been written
-USED	Block contains valid data
-TRIMMED	Block marked as unused
-BAD	Block is permanently unusable
-Block states are tracked independently from the storage data.
-4. Virtual Device Layer (device.py)
-The virtual device simulates raw hardware and only understands block-based operations.
-4.1 Responsibilities
-Read and write individual blocks
-Track block states
-Handle TRIM operations
-Collect device statistics
-Simulate hardware failures
-The device does not understand offsets, files, or partial reads.
-4.2 Device Interface
+Below is a **clean, GitHub-ready `README.md`** written exactly as expected for a repository.
+It’s structured, professional, and concise, while still clearly explaining the system and design decisions.
+
+You can paste this **directly** into your Git repo.
+
+---
+
+# Virtual Block Storage Device & Device Driver (Python)
+
+## Overview
+
+This repository contains a Python simulation of a **block storage device** and its corresponding **device driver layer**.
+The project models how an operating system interacts with storage hardware at a low level, including block-based I/O, driver validation, error handling, and logging.
+
+No real hardware is accessed — all behavior is simulated using Python standard libraries.
+
+---
+
+## Objectives
+
+The project is designed to demonstrate:
+
+* Understanding of block-based storage concepts
+* Device vs. driver separation
+* Low-level I/O request handling
+* Robust error handling and retries
+* Clean system-oriented code structure
+* Logging and monitoring practices
+
+---
+
+## System Architecture
+
+The implementation is split into **two layers**, mirroring real operating system design:
+
+### 1. Virtual Device Layer
+
+* Simulates raw storage hardware
+* Operates strictly on fixed-size blocks
+* Has no knowledge of offsets or partial reads/writes
+
+### 2. Device Driver Layer
+
+* Acts as an intermediary between users and the device
+* Translates byte offsets into block operations
+* Enforces validation rules and block state constraints
+* Handles retries and raises meaningful exceptions
+
+---
+
+## Storage Model
+
+| Property     | Value              |
+| ------------ | ------------------ |
+| Total Size   | 8 MB               |
+| Block Size   | 4096 bytes         |
+| Total Blocks | 2048               |
+| Backend      | Python `bytearray` |
+
+The storage backend is a contiguous `bytearray`, simulating disk memory.
+
+---
+
+## Block States
+
+Each block has an associated state:
+
+* **FREE** – Block has never been written
+* **USED** – Block contains valid data
+* **TRIMMED** – Block marked as unused
+* **BAD** – Block is permanently unusable
+
+Block state management is critical to enforcing correct read/write behavior.
+
+---
+
+## Virtual Device Interface
+
+Implemented in `device.py`:
+
+```python
 read_block(block_id) -> bytes
 write_block(block_id, data: bytes)
 trim_block(block_id)
 get_stats() -> dict
-Each method operates on exactly one block.
-5. TRIM Behavior
-TRIM simulates SSD discard functionality:
-trim_block() marks a block as TRIMMED
-Reading a trimmed block returns zero-filled data
-Trimmed blocks may be reused by future writes
-TRIM does not physically erase memory
-This behavior enforces correct state handling and reuse logic.
-6. Device Driver Layer (driver.py)
-The device driver translates user-level requests into block operations.
-6.1 Driver Responsibilities
-Validate all read/write requests
-Translate byte offsets to block IDs
-Handle partial block reads and writes
-Enforce block state rules
-Retry failed writes (up to 3 attempts)
-Raise meaningful exceptions
-Log all operations and failures
-6.2 Driver Interface
+```
+
+All operations work on **exactly one block**.
+
+---
+
+## Device Driver Interface
+
+Implemented in `driver.py`:
+
+```python
 read(offset: int, size: int) -> bytes
 write(offset: int, data: bytes)
 trim(offset: int, size: int)
-Users interact only with the driver, never directly with the device.
-7. Offset-to-Block Translation
-The driver converts byte offsets into block operations using:
-block_id = offset // BLOCK_SIZE
-block_offset = offset % BLOCK_SIZE
-This allows the driver to correctly handle:
-Partial block writes
-Multi-block reads
-Boundary conditions
-8. Error Handling Strategy
-The system uses custom exception classes to ensure clear and precise failure reporting.
-Examples:
-Out-of-bounds access
-Invalid block access
-BAD block usage
-Retry exhaustion
-Simulated I/O failures
-This mirrors real operating system error models.
-9. Logging & Monitoring
+```
+
+The driver:
+
+* Validates all requests
+* Converts offsets to block IDs
+* Handles partial blocks
+* Enforces block state rules
+* Retries failed writes (up to 3 attempts)
+
+---
+
+## TRIM Behavior
+
+* `trim()` marks blocks as `TRIMMED`
+* Reading trimmed blocks returns **zero-filled data**
+* Trimmed blocks may be reused by future writes
+* TRIM does not physically erase memory
+
+This simulates SSD discard behavior.
+
+---
+
+## Error Handling
+
+Custom exception classes are used to clearly represent failure conditions, including:
+
+* Out-of-bounds access
+* Invalid block operations
+* BAD block access
+* Partial writes
+* Retry exhaustion
+* Simulated device failures
+
+Errors are surfaced at the driver level with meaningful messages.
+
+---
+
+## Logging & Monitoring
+
 The system logs:
-All read/write/trim operations
-Retry attempts
-Errors and failures
-Device statistics
-Statistics include:
-Total reads
-Total writes
-Trim operations
-Failed operations
-This enables observability similar to real system diagnostics.
-10. Testing
-The implementation is validated using mandatory test scenarios:
-✔ Write data → Read data → Data matches
-✔ Trim data → Read → Zero-filled result
-✔ Write beyond device size → Exception
-✔ Access BAD block → Exception
-✔ Multiple sequential reads and writes
-All tests ensure correctness, robustness, and state consistency.
-11. Project Structure
+
+* All read, write, and trim operations
+* Retry attempts
+* Errors and failures
+* Device statistics
+
+Example statistics:
+
+* Total reads
+* Total writes
+* Trim operations
+* Failed operations
+
+---
+
+## Testing
+
+The implementation includes tests that verify:
+
+* Write → Read data integrity
+* Trim → Read returns zero-filled data
+* Out-of-bounds access raises exceptions
+* BAD block access is rejected
+* Sequential read/write correctness
+
+All tests must pass for a valid implementation.
+
+---
+
+## Project Structure
+
+```
 device_driver/
-├── device.py       # Virtual storage device
-├── driver.py       # Device driver layer
+├── device.py       # Virtual block storage device
+├── driver.py       # Device driver logic
 ├── constants.py    # Shared constants
-├── exceptions.py   # Custom exceptions
+├── exceptions.py   # Custom exception classes
 ├── tests.py        # Unit tests
-└── README.md       # Project documentation
-12. Constraints & Tools
-Python standard library only
-No real hardware access
-Clean, readable, and maintainable code
-Modular and testable design
-13. Learning Outcomes
-This project demonstrates:
-Low-level system design thinking
-Layered architecture
-Block-based I/O concepts
-Robust error handling
-Defensive programming
-Logging and observability
-Real-world OS driver principles
-14. Summary
-This project simulates how an operating system interacts with a block storage device through a device driver.
-By abstracting hardware behavior and enforcing strict state and error rules, the system provides a realistic and educational model of storage I/O — implemented entirely in Python.
+└── README.md       # Documentation
+```
+
+---
+
+## Constraints
+
+* Python standard library only
+* No real hardware access
+* Emphasis on clean, readable, maintainable code
+
+---
+
+## Learning Outcomes
+
+This project demonstrates practical understanding of:
+
+* Low-level storage systems
+* Block-based I/O
+* OS-style driver abstractions
+* Defensive programming
+* Error recovery strategies
+* System observability through logging
+
+---
+
+## Summary
+
+This repository provides a realistic simulation of how an operating system communicates with a block storage device through a device driver.
+It emphasizes correctness, robustness, and clear system design over raw performance.
+
+---
