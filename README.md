@@ -1,12 +1,4 @@
 # Virtual-Block-Storage-Device
-Below is a **clean, GitHub-ready `README.md`** written exactly as expected for a repository.
-It’s structured, professional, and concise, while still clearly explaining the system and design decisions.
-
-You can paste this **directly** into your Git repo.
-
----
-
-# Virtual Block Storage Device & Device Driver (Python)
 
 ## Overview
 
