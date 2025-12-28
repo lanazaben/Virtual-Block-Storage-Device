@@ -23,7 +23,15 @@ from exceptions import (
 
 
 class VirtualBlockDevice:
-    def __init__(self):
+    """
+    Virtual Block Storage Device.
+    Simulates low-level block-based storage behavior.
+    """
+
+    def __init__(self, simulate_failure=True):
+        self.simulate_failure = simulate_failure
+        self.total_blocks = TOTAL_BLOCKS
+
         # Raw storage memory (simulates disk sectors)
         self._storage = bytearray(DEVICE_SIZE_BYTES)
 
@@ -38,7 +46,9 @@ class VirtualBlockDevice:
             STAT_FAILURES: 0,
         }
 
+    # =========================
     # Internal Helpers
+    # =========================
 
     def _validate_block_id(self, block_id: int):
         if not isinstance(block_id, int):
@@ -48,12 +58,17 @@ class VirtualBlockDevice:
             raise InvalidBlockError(f"Invalid block ID: {block_id}")
 
     def _simulate_io_failure(self):
-        # 5% failure probability
-        if random.random() < 0.05:
+        """
+        Simulate random hardware I/O failures.
+        Disabled during testing.
+        """
+        if self.simulate_failure and random.random() < 0.05:
             self._stats[STAT_FAILURES] += 1
             raise DeviceIOError("Simulated device I/O failure")
 
+    # =========================
     # Public Device Interface
+    # =========================
 
     def read_block(self, block_id: int) -> bytes:
         self._validate_block_id(block_id)
@@ -65,11 +80,9 @@ class VirtualBlockDevice:
             self._stats[STAT_FAILURES] += 1
             raise BadBlockError(f"Cannot read BAD block {block_id}")
 
-        # TRIMMED blocks are considered logically empty
+        # TRIMMED blocks are logically empty
         if state == BLOCK_TRIMMED:
-            raise TrimmedBlockReadError(
-                f"Block {block_id} has been trimmed"
-            )
+            return b"\x00" * BLOCK_SIZE_BYTES
 
         # Simulate random hardware failure
         self._simulate_io_failure()
@@ -112,11 +125,24 @@ class VirtualBlockDevice:
         self._validate_block_id(block_id)
 
         if self._block_states[block_id] == BLOCK_BAD:
-            raise BadBlockError(f"Cannot trim bad block {block_id}")
+            self._stats[STAT_FAILURES] += 1
+            raise BadBlockError(f"Cannot trim BAD block {block_id}")
 
         self._block_states[block_id] = BLOCK_TRIMMED
         self._stats[STAT_TRIMS] += 1
 
     def get_stats(self) -> dict:
         return dict(self._stats)
+
+    # =========================
+    # Testing / Maintenance Hook
+    # =========================
+
+    def mark_block_bad(self, block_id: int):
+        """
+        Explicitly mark a block as BAD.
+        Used for testing and fault injection.
+        """
+        self._validate_block_id(block_id)
+        self._block_states[block_id] = BLOCK_BAD
 
