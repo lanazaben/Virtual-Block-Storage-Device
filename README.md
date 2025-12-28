@@ -1,4 +1,4 @@
-# Virtual-Block-Storage-Device
+# Virtual Block Storage Device
 
 ## Overview
 
