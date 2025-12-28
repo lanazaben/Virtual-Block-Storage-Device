@@ -23,22 +23,24 @@ from exceptions import (
 
 
 class VirtualBlockDevice:
-    """
-    Virtual Block Storage Device.
-    Simulates low-level block-based storage behavior.
-    """
 
     def __init__(self, simulate_failure=True):
         self.simulate_failure = simulate_failure
-        self.total_blocks = TOTAL_BLOCKS
 
-        # Raw storage memory (simulates disk sectors)
+        # Raw storage
         self._storage = bytearray(DEVICE_SIZE_BYTES)
 
-        # Track the state of each block independently
+        # Physical block states
         self._block_states = [BLOCK_FREE] * TOTAL_BLOCKS
 
-        # Device-level statistics for monitoring and debugging
+        # LBA <-> Physical block mappings
+        self._lba_to_pba = {}
+        self._pba_to_lba = {}
+
+        # Free physical blocks
+        self._free_blocks = set(range(TOTAL_BLOCKS))
+
+        # Statistics
         self._stats = {
             STAT_READS: 0,
             STAT_WRITES: 0,
@@ -46,103 +48,113 @@ class VirtualBlockDevice:
             STAT_FAILURES: 0,
         }
 
-    # =========================
+    # --------------------------------------------------
     # Internal Helpers
-    # =========================
+    # --------------------------------------------------
 
     def _validate_block_id(self, block_id: int):
         if not isinstance(block_id, int):
             raise InvalidBlockError("Block ID must be an integer")
-
         if block_id < 0 or block_id >= TOTAL_BLOCKS:
             raise InvalidBlockError(f"Invalid block ID: {block_id}")
 
     def _simulate_io_failure(self):
-        """
-        Simulate random hardware I/O failures.
-        Disabled during testing.
-        """
         if self.simulate_failure and random.random() < 0.05:
             self._stats[STAT_FAILURES] += 1
             raise DeviceIOError("Simulated device I/O failure")
 
-    # =========================
-    # Public Device Interface
-    # =========================
+    def _allocate_block(self) -> int:
+        if not self._free_blocks:
+            reclaimed = self.garbage_collect()
+            if reclaimed == 0:
+                raise DeviceIOError("Storage full: no reclaimable blocks")
 
-    def read_block(self, block_id: int) -> bytes:
-        self._validate_block_id(block_id)
+        return self._free_blocks.pop()
 
-        state = self._block_states[block_id]
+    # --------------------------------------------------
+    # Garbage Collection
+    # --------------------------------------------------
 
-        # BAD blocks are permanently unusable
+    def garbage_collect(self) -> int:
+        reclaimed = 0
+
+        for pba in list(self._pba_to_lba.keys()):
+            if self._block_states[pba] == BLOCK_TRIMMED:
+                lba = self._pba_to_lba.pop(pba)
+                self._lba_to_pba.pop(lba, None)
+
+                self._block_states[pba] = BLOCK_FREE
+                self._free_blocks.add(pba)
+                reclaimed += 1
+
+        return reclaimed
+
+    # --------------------------------------------------
+    # Public LBA-Based Interface
+    # --------------------------------------------------
+
+    def read_block_lba(self, lba: int) -> bytes:
+        if lba not in self._lba_to_pba:
+            return b"\x00" * BLOCK_SIZE_BYTES
+
+        pba = self._lba_to_pba[lba]
+        state = self._block_states[pba]
+
         if state == BLOCK_BAD:
             self._stats[STAT_FAILURES] += 1
-            raise BadBlockError(f"Cannot read BAD block {block_id}")
+            raise BadBlockError(f"Cannot read BAD block {pba}")
 
-        # TRIMMED blocks are logically empty
         if state == BLOCK_TRIMMED:
             return b"\x00" * BLOCK_SIZE_BYTES
 
-        # Simulate random hardware failure
         self._simulate_io_failure()
 
-        start = block_id * BLOCK_SIZE_BYTES
+        start = pba * BLOCK_SIZE_BYTES
         end = start + BLOCK_SIZE_BYTES
 
         self._stats[STAT_READS] += 1
         return bytes(self._storage[start:end])
 
-    def write_block(self, block_id: int, data: bytes):
-        self._validate_block_id(block_id)
 
-        if not isinstance(data, (bytes, bytearray)):
-            raise TypeError("Data must be bytes or bytearray")
+    def write_block_lba(self, lba: int, data: bytes):
+        self._validate_block_id(lba)
 
         if len(data) != BLOCK_SIZE_BYTES:
-            raise ValueError(
-                f"Write size must be exactly {BLOCK_SIZE_BYTES} bytes"
-            )
+            raise ValueError(f"Write must be exactly {BLOCK_SIZE_BYTES} bytes")
 
-        state = self._block_states[block_id]
+        # Overwrite handling
+        if lba in self._lba_to_pba:
+            old_pba = self._lba_to_pba[lba]
+            self._block_states[old_pba] = BLOCK_TRIMMED
 
-        # Writing to BAD blocks is forbidden
-        if state == BLOCK_BAD:
-            self._stats[STAT_FAILURES] += 1
-            raise BadBlockError(f"Cannot write to BAD block {block_id}")
+        pba = self._allocate_block()
 
-        # Simulate random hardware failure
         self._simulate_io_failure()
 
-        start = block_id * BLOCK_SIZE_BYTES
+        start = pba * BLOCK_SIZE_BYTES
         end = start + BLOCK_SIZE_BYTES
 
         self._storage[start:end] = data
-        self._block_states[block_id] = BLOCK_USED
+        self._block_states[pba] = BLOCK_USED
+
+        self._lba_to_pba[lba] = pba
+        self._pba_to_lba[pba] = lba
+
         self._stats[STAT_WRITES] += 1
 
-    def trim_block(self, block_id: int):
+    def trim_lba(self, lba: int):
+        self._validate_block_id(lba)
+
+        if lba in self._lba_to_pba:
+            pba = self._lba_to_pba[lba]
+            self._block_states[pba] = BLOCK_TRIMMED
+            self._stats[STAT_TRIMS] += 1
+
+    def mark_block_bad(self, block_id: int):
         self._validate_block_id(block_id)
-
-        if self._block_states[block_id] == BLOCK_BAD:
-            self._stats[STAT_FAILURES] += 1
-            raise BadBlockError(f"Cannot trim BAD block {block_id}")
-
-        self._block_states[block_id] = BLOCK_TRIMMED
-        self._stats[STAT_TRIMS] += 1
+        self._block_states[block_id] = BLOCK_BAD
 
     def get_stats(self) -> dict:
         return dict(self._stats)
 
-    # =========================
-    # Testing / Maintenance Hook
-    # =========================
-
-    def mark_block_bad(self, block_id: int):
-        """
-        Explicitly mark a block as BAD.
-        Used for testing and fault injection.
-        """
-        self._validate_block_id(block_id)
-        self._block_states[block_id] = BLOCK_BAD
 

@@ -1,128 +1,52 @@
-from constants import (
-    BLOCK_SIZE_BYTES,
-    DEVICE_SIZE_BYTES,
-    MAX_WRITE_RETRIES,
-    BLOCK_TRIMMED,
-)
-
-from exceptions import (
-    OutOfBoundsError,
-    BadBlockError,
-    DeviceIOError,
-    WriteRetryExceededError,
-    TrimmedBlockReadError,
-)
-
-from device import VirtualBlockDevice
+from constants import BLOCK_SIZE_BYTES
+from exceptions import OutOfBoundsError
 
 
 class BlockDeviceDriver:
 
-    def __init__(self, device: VirtualBlockDevice):
+    def __init__(self, device):
         self.device = device
 
-    # Validation Helpers
+    def _check_bounds(self, offset: int, length: int):
+        if offset < 0 or length < 0:
+            raise OutOfBoundsError("Negative offset or length")
 
-    def _validate_bounds(self, offset: int, size: int):
-        if offset < 0 or size < 0:
-            raise OutOfBoundsError("Offset and size must be non-negative")
-
-        if offset + size > DEVICE_SIZE_BYTES:
-            raise OutOfBoundsError("Operation exceeds device size")
-
-    def _zero_block(self) -> bytes:
-        return bytes(BLOCK_SIZE_BYTES)
-
-    # Public Driver Interface
-
-    def read(self, offset: int, size: int) -> bytes:
-        self._validate_bounds(offset, size)
-
-        if size == 0:
-            return b""
+    def read(self, offset: int, length: int) -> bytes:
+        self._check_bounds(offset, length)
 
         result = bytearray()
+        start_lba = offset // BLOCK_SIZE_BYTES
+        end_lba = (offset + length - 1) // BLOCK_SIZE_BYTES
 
-        while size > 0:
-            block_id = offset // BLOCK_SIZE_BYTES
-            block_offset = offset % BLOCK_SIZE_BYTES
+        for lba in range(start_lba, end_lba + 1):
+            block = self.device.read_block_lba(lba)
+            result.extend(block)
 
-            bytes_available = BLOCK_SIZE_BYTES - block_offset
-            bytes_to_read = min(size, bytes_available)
-
-            try:
-                block_data = self.device.read_block(block_id)
-            except TrimmedBlockReadError:
-                # Trimmed blocks are treated as zero-filled
-                block_data = self._zero_block()
-
-            chunk = block_data[block_offset:block_offset + bytes_to_read]
-            result.extend(chunk)
-
-            offset += bytes_to_read
-            size -= bytes_to_read
-
-        return bytes(result)
+        start = offset % BLOCK_SIZE_BYTES
+        return bytes(result[start:start + length])
 
     def write(self, offset: int, data: bytes):
-        if not isinstance(data, (bytes, bytearray)):
-            raise TypeError("Data must be bytes or bytearray")
+        self._check_bounds(offset, len(data))
 
-        size = len(data)
-        self._validate_bounds(offset, size)
+        start_lba = offset // BLOCK_SIZE_BYTES
+        end_lba = (offset + len(data) - 1) // BLOCK_SIZE_BYTES
 
-        data_offset = 0
+        idx = 0
+        for lba in range(start_lba, end_lba + 1):
+            block = bytearray(self.device.read_block_lba(lba))
+            chunk = data[idx:idx + BLOCK_SIZE_BYTES]
+            block[:len(chunk)] = chunk
 
-        while size > 0:
-            block_id = offset // BLOCK_SIZE_BYTES
-            block_offset = offset % BLOCK_SIZE_BYTES
+            self.device.write_block_lba(lba, bytes(block))
+            idx += BLOCK_SIZE_BYTES
 
-            bytes_available = BLOCK_SIZE_BYTES - block_offset
-            bytes_to_write = min(size, bytes_available)
+    def trim(self, offset: int, length: int):
+        self._check_bounds(offset, length)
 
-            # Read existing block to preserve unaffected regions
-            try:
-                try:
-                    block_data = self.device.read_block(block_id)
-                except TrimmedBlockReadError:
-                    block_data = self._zero_block()
+        start_lba = offset // BLOCK_SIZE_BYTES
+        end_lba = (offset + length - 1) // BLOCK_SIZE_BYTES
 
-                block_buffer = bytearray(block_data)
+        for lba in range(start_lba, end_lba + 1):
+            self.device.trim_lba(lba)
 
-                block_buffer[
-                    block_offset:block_offset + bytes_to_write
-                ] = data[data_offset:data_offset + bytes_to_write]
-
-            except BadBlockError:
-                # Writing to a bad block is not recoverable
-                raise
-
-            # Retry loop for recoverable I/O failures
-            for attempt in range(MAX_WRITE_RETRIES):
-                try:
-                    self.device.write_block(block_id, bytes(block_buffer))
-                    break
-                except DeviceIOError:
-                    if attempt == MAX_WRITE_RETRIES - 1:
-                        raise WriteRetryExceededError(
-                            f"Write failed after {MAX_WRITE_RETRIES} retries"
-                        )
-                    # Retry silently; device-level failures are expected
-
-            offset += bytes_to_write
-            data_offset += bytes_to_write
-            size -= bytes_to_write
-
-    def trim(self, offset: int, size: int):
-
-        self._validate_bounds(offset, size)
-
-        if size == 0:
-            return
-
-        start_block = offset // BLOCK_SIZE_BYTES
-        end_block = (offset + size - 1) // BLOCK_SIZE_BYTES
-
-        for block_id in range(start_block, end_block + 1):
-            self.device.trim_block(block_id)
 

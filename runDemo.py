@@ -1,35 +1,59 @@
-# runDemo.py
-
 from device import VirtualBlockDevice
 from driver import BlockDeviceDriver
-from exceptions import DeviceError
+from constants import BLOCK_SIZE_BYTES
+
 
 def main():
-    device = VirtualBlockDevice()
+    print("Initializing virtual block device...")
+    device = VirtualBlockDevice(simulate_failure=False)
     driver = BlockDeviceDriver(device)
 
+    print("\n--- Basic Write / Read ---")
+    data = b"Hello Block Device"
+    driver.write(0, data)
+    result = driver.read(0, len(data))
+    print("Read:", result)
+
+    print("\n--- Trim Demonstration ---")
+    driver.trim(0, BLOCK_SIZE_BYTES)
+    trimmed = driver.read(0, len(data))
+    print("Trimmed read:", trimmed)
+
+    print("\n--- LBA → Physical Mapping ---")
+    for lba, pba in device._lba_to_pba.items():
+        print(f"LBA {lba} -> Physical Block {pba}")
+
+    print("\n--- Forcing Storage-Full Condition ---")
+    lba = 1
+    payload = b"A" * BLOCK_SIZE_BYTES
+
     try:
-        print("Writing data...")
-        driver.write(1000, b"Hello Block Device")
+        while True:
+            driver.write(lba * BLOCK_SIZE_BYTES, payload)
+            lba += 1
+    except Exception as e:
+        print("Storage full detected:", str(e))
 
-        print("Reading data...")
-        data = driver.read(1000, len(b"Hello Block Device"))
-        print("Read:", data)
+    print("\n--- Triggering Garbage Collection ---")
+    print("Trimming half of the written blocks...")
 
-        print("Trimming first block...")
-        driver.trim(0, 4096)
+    for i in range(1, lba, 2):
+        driver.trim(i * BLOCK_SIZE_BYTES, BLOCK_SIZE_BYTES)
 
-        print("Reading trimmed block...")
-        trimmed_data = driver.read(0, 16)
-        print("Trimmed read:", trimmed_data)
+    print("Writing again to trigger GC...")
+    driver.write(0, b"GC!")
 
-    except DeviceError as e:
-        print("Device error occurred:", e)
+    print("\n--- Post-GC Mapping ---")
+    for lba, pba in device._lba_to_pba.items():
+        print(f"LBA {lba} -> Physical Block {pba}")
 
-    finally:
-        print("Device stats:")
-        print(device.get_stats())
+    print("\n--- GC & Device Statistics ---")
+    stats = device.get_stats()
+    for key, value in stats.items():
+        print(f"{key}: {value}")
+
+    print("\nDemo complete ✔")
+
 
 if __name__ == "__main__":
     main()
-#
