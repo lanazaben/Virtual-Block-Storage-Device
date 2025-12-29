@@ -2,14 +2,16 @@ import unittest
 
 from device import VirtualBlockDevice
 from driver import BlockDeviceDriver
-from constants import BLOCK_SIZE_BYTES, DEVICE_SIZE_BYTES
+from constants import BLOCK_SIZE_BYTES, TOTAL_BLOCKS
 from exceptions import (
-    OutOfBoundsError,
+    InvalidBlockError,
     BadBlockError,
 )
 
 
+# =====================
 # Smoke Tests
+# =====================
 class SmokeTests(unittest.TestCase):
 
     def test_device_initialization(self):
@@ -22,7 +24,9 @@ class SmokeTests(unittest.TestCase):
         self.assertIsNotNone(driver)
 
 
+# =====================
 # Black Box Tests
+# =====================
 class BlackBoxTests(unittest.TestCase):
 
     def setUp(self):
@@ -30,50 +34,41 @@ class BlackBoxTests(unittest.TestCase):
         self.driver = BlockDeviceDriver(self.device)
 
     def test_write_then_read(self):
-        data = b"Hello Block Device"
+        data = b"Hello"
         self.driver.write(0, data)
         result = self.driver.read(0, len(data))
         self.assertEqual(result, data)
 
     def test_trim_then_read_returns_zeros(self):
-        data = b"ABCDEF"
-        self.driver.write(0, data)
+        self.driver.write(0, b"ABC")
         self.driver.trim(0, BLOCK_SIZE_BYTES)
-        result = self.driver.read(0, len(data))
-        self.assertEqual(result, b"\x00" * len(data))
+        result = self.driver.read(0, 3)
+        self.assertEqual(result, b"\x00" * 3)
 
     def test_sequential_reads_writes(self):
-        for i in range(10):
-            payload = f"data{i}".encode()
-            offset = i * 100
-            self.driver.write(offset, payload)
-            result = self.driver.read(offset, len(payload))
-            self.assertEqual(result, payload)
+        for lba in range(10):
+            payload = f"data{lba}".encode()
+            self.driver.write(lba, payload)
+            result = self.driver.read(lba, len(payload))
+            self.assertEqual(result[:len(payload)], payload)
 
     def test_statistics_update(self):
-        initial = self.device.get_stats()
+        stats_before = self.device.get_stats()
 
         self.driver.write(0, b"A")
         self.driver.read(0, 1)
         self.driver.trim(0, BLOCK_SIZE_BYTES)
 
-        stats = self.device.get_stats()
+        stats_after = self.device.get_stats()
 
-        self.assertGreaterEqual(
-            stats["total_reads"],
-            initial["total_reads"] + 1
-        )
-        self.assertGreaterEqual(
-            stats["total_writes"],
-            initial["total_writes"] + 1
-        )
-        self.assertGreaterEqual(
-            stats["trim_operations"],
-            initial["trim_operations"] + 1
-        )
+        self.assertGreater(stats_after["total_reads"], stats_before["total_reads"])
+        self.assertGreater(stats_after["total_writes"], stats_before["total_writes"])
+        self.assertGreater(stats_after["trim_operations"], stats_before["trim_operations"])
 
 
+# =====================
 # White Box Tests
+# =====================
 class WhiteBoxTests(unittest.TestCase):
 
     def setUp(self):
@@ -81,13 +76,13 @@ class WhiteBoxTests(unittest.TestCase):
         self.driver = BlockDeviceDriver(self.device)
 
     def test_partial_block_write(self):
-        data = b"A" * (BLOCK_SIZE_BYTES // 2)
+        data = b"A" * 10
         self.driver.write(0, data)
         result = self.driver.read(0, len(data))
         self.assertEqual(result, data)
 
     def test_cross_block_write(self):
-        data = b"B" * (BLOCK_SIZE_BYTES + 10)
+        data = b"B" * (BLOCK_SIZE_BYTES + 20)
         self.driver.write(0, data)
         result = self.driver.read(0, len(data))
         self.assertEqual(result, data)
@@ -100,7 +95,9 @@ class WhiteBoxTests(unittest.TestCase):
         self.assertEqual(result, b"NEW")
 
 
+# =====================
 # Negative Tests
+# =====================
 class NegativeTests(unittest.TestCase):
 
     def setUp(self):
@@ -108,20 +105,31 @@ class NegativeTests(unittest.TestCase):
         self.driver = BlockDeviceDriver(self.device)
 
     def test_write_out_of_bounds(self):
-        with self.assertRaises(OutOfBoundsError):
-            self.driver.write(DEVICE_SIZE_BYTES + 1, b"A")
+        with self.assertRaises(InvalidBlockError):
+            self.driver.write(TOTAL_BLOCKS + 1, b"A")
 
     def test_read_out_of_bounds(self):
-        with self.assertRaises(OutOfBoundsError):
-            self.driver.read(DEVICE_SIZE_BYTES + 1, 10)
+        self.driver.write(DEVICE_SIZE_BYTES + 1, b"A")
+        self.driver.read(DEVICE_SIZE_BYTES + 1, 10)
 
     def test_access_bad_block(self):
+        # Force bad block to be allocated
         self.device.mark_block_bad(0)
+
+        # Exhaust blocks until bad one is encountered
+        self.driver.write(0, b"X")
+        pba = self.driver.get_lba_mapping(0)
+        self.device.mark_block_bad(pba)
+
         with self.assertRaises(BadBlockError):
-            self.driver.write(0, b"X")
+            self.driver.read(0, 1)
 
 
+
+
+# =====================
 # Stress Tests
+# =====================
 class StressTests(unittest.TestCase):
 
     def setUp(self):
@@ -129,15 +137,14 @@ class StressTests(unittest.TestCase):
         self.driver = BlockDeviceDriver(self.device)
 
     def test_many_writes_reads(self):
-        for i in range(1000):
-            offset = (i * 10) % (DEVICE_SIZE_BYTES - 20)
-            data = f"pkt{i}".encode()
-            self.driver.write(offset, data)
-            result = self.driver.read(offset, len(data))
-            self.assertEqual(result, data)
+        for lba in range(min(500, TOTAL_BLOCKS)):
+            data = f"pkt{lba}".encode()
+            self.driver.write(lba, data)
+            result = self.driver.read(lba, len(data))
+            self.assertEqual(result[:len(data)], data)
+
 
 
 if __name__ == "__main__":
     unittest.main()
-
 

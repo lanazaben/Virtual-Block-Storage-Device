@@ -34,11 +34,18 @@ class BlockDeviceDriver:
         idx = 0
         for lba in range(start_lba, end_lba + 1):
             block = bytearray(self.device.read_block_lba(lba))
-            chunk = data[idx:idx + BLOCK_SIZE_BYTES]
-            block[:len(chunk)] = chunk
 
-            self.device.write_block_lba(lba, bytes(block))
-            idx += BLOCK_SIZE_BYTES
+            block_offset = offset % BLOCK_SIZE_BYTES if lba == start_lba else 0
+            write_len = min(
+                BLOCK_SIZE_BYTES - block_offset,
+                len(data) - idx
+        )
+
+        block[block_offset:block_offset + write_len] = data[idx:idx + write_len]
+
+        self.device.write_block_lba(lba, bytes(block))
+        idx += write_len
+
 
     def trim(self, offset: int, length: int):
         self._check_bounds(offset, length)
@@ -48,5 +55,8 @@ class BlockDeviceDriver:
 
         for lba in range(start_lba, end_lba + 1):
             self.device.trim_lba(lba)
+     
+     def get_lba_mapping(self, lba: int):
+         return self.device._lba_to_pba.get(lba)
 
 
