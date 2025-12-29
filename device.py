@@ -29,6 +29,7 @@ class VirtualBlockDevice:
 
         # Raw storage
         self._storage = bytearray(DEVICE_SIZE_BYTES)
+        self.total_size_bytes = DEVICE_SIZE_BYTES
 
         # Physical block states
         self._block_states = [BLOCK_FREE] * TOTAL_BLOCKS
@@ -155,6 +156,12 @@ class VirtualBlockDevice:
         self._block_states[block_id] = BLOCK_BAD
 
     def get_stats(self) -> dict:
-        return dict(self._stats)
+    return {
+        "total_reads": self._stats[STAT_READS],
+        "total_writes": self._stats[STAT_WRITES],
+        "trim_operations": self._stats[STAT_TRIMS],
+        "total_failures": self._stats[STAT_FAILURES],
+    }
+
 
 
