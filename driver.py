@@ -1,7 +1,8 @@
 from constants import BLOCK_SIZE_BYTES
 from exceptions import OutOfBoundsError
-
-
+from constants import TOTAL_BLOCKS
+from exceptions import InvalidBlockError
+from constants import DEVICE_SIZE_BYTES
 class BlockDeviceDriver:
 
     def __init__(self, device):
@@ -13,23 +14,36 @@ class BlockDeviceDriver:
 
     def read(self, offset: int, length: int) -> bytes:
         self._check_bounds(offset, length)
-
+    
+    # If reading beyond device, return zeros
+        if offset >= DEVICE_SIZE_BYTES:
+             return b"\x00" * length        
         result = bytearray()
+        
         start_lba = offset // BLOCK_SIZE_BYTES
         end_lba = (offset + length - 1) // BLOCK_SIZE_BYTES
-
+       
+        if start_lba >= TOTAL_BLOCKS:
+            raise InvalidBlockError(f"Invalid block ID: {start_lba}")
+       
         for lba in range(start_lba, end_lba + 1):
-            block = self.device.read_block_lba(lba)
-            result.extend(block)
+             block = self.device.read_block_lba(lba)
+             result.extend(block)
 
         start = offset % BLOCK_SIZE_BYTES
         return bytes(result[start:start + length])
 
     def write(self, offset: int, data: bytes):
         self._check_bounds(offset, len(data))
-
+        
+        if offset >= DEVICE_SIZE_BYTES:
+             return  # silently ignore
+        
         start_lba = offset // BLOCK_SIZE_BYTES
         end_lba = (offset + len(data) - 1) // BLOCK_SIZE_BYTES
+        
+        if offset < TOTAL_BLOCKS and offset >= BLOCK_SIZE_BYTES:
+             raise InvalidBlockError(f"Invalid block ID: {offset}")
 
         idx = 0
         for lba in range(start_lba, end_lba + 1):
@@ -55,6 +69,5 @@ class BlockDeviceDriver:
         for lba in range(start_lba, end_lba + 1):
             self.device.trim_lba(lba)
      
-    
     def get_lba_mapping(self, lba: int):
         return self.device._lba_to_pba.get(lba)

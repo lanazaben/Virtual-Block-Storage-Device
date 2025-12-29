@@ -1,6 +1,7 @@
 import unittest
 
 from device import VirtualBlockDevice
+from constants import DEVICE_SIZE_BYTES
 from driver import BlockDeviceDriver
 from constants import BLOCK_SIZE_BYTES, TOTAL_BLOCKS
 from exceptions import (
@@ -9,9 +10,7 @@ from exceptions import (
 )
 
 
-# =====================
 # Smoke Tests
-# =====================
 class SmokeTests(unittest.TestCase):
 
     def test_device_initialization(self):
@@ -24,9 +23,7 @@ class SmokeTests(unittest.TestCase):
         self.assertIsNotNone(driver)
 
 
-# =====================
 # Black Box Tests
-# =====================
 class BlackBoxTests(unittest.TestCase):
 
     def setUp(self):
@@ -66,9 +63,7 @@ class BlackBoxTests(unittest.TestCase):
         self.assertGreater(stats_after["trim_operations"], stats_before["trim_operations"])
 
 
-# =====================
 # White Box Tests
-# =====================
 class WhiteBoxTests(unittest.TestCase):
 
     def setUp(self):
@@ -95,9 +90,7 @@ class WhiteBoxTests(unittest.TestCase):
         self.assertEqual(result, b"NEW")
 
 
-# =====================
 # Negative Tests
-# =====================
 class NegativeTests(unittest.TestCase):
 
     def setUp(self):
@@ -127,9 +120,7 @@ class NegativeTests(unittest.TestCase):
 
 
 
-# =====================
 # Stress Tests
-# =====================
 class StressTests(unittest.TestCase):
 
     def setUp(self):

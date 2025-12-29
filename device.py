@@ -49,9 +49,6 @@ class VirtualBlockDevice:
             STAT_FAILURES: 0,
         }
 
-    # --------------------------------------------------
-    # Internal Helpers
-    # --------------------------------------------------
 
     def _validate_block_id(self, block_id: int):
         if not isinstance(block_id, int):
@@ -72,10 +69,7 @@ class VirtualBlockDevice:
 
         return self._free_blocks.pop()
 
-    # --------------------------------------------------
     # Garbage Collection
-    # --------------------------------------------------
-
     def garbage_collect(self) -> int:
         reclaimed = 0
 
@@ -89,10 +83,6 @@ class VirtualBlockDevice:
                 reclaimed += 1
 
         return reclaimed
-
-    # --------------------------------------------------
-    # Public LBA-Based Interface
-    # --------------------------------------------------
 
     def read_block_lba(self, lba: int) -> bytes:
         if lba not in self._lba_to_pba:
@@ -156,12 +146,12 @@ class VirtualBlockDevice:
         self._block_states[block_id] = BLOCK_BAD
 
     def get_stats(self) -> dict:
-    return {
-        "total_reads": self._stats[STAT_READS],
-        "total_writes": self._stats[STAT_WRITES],
-        "trim_operations": self._stats[STAT_TRIMS],
-        "total_failures": self._stats[STAT_FAILURES],
-    }
+        return {
+             "total_reads": self._stats[STAT_READS],
+             "total_writes": self._stats[STAT_WRITES],
+             "trim_operations": self._stats[STAT_TRIMS],
+             "total_failures": self._stats[STAT_FAILURES],
+        }
 
 
 
