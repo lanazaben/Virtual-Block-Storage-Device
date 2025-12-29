@@ -26,26 +26,25 @@ class BlockDeviceDriver:
         return bytes(result[start:start + length])
 
     def write(self, offset: int, data: bytes):
-        self._check_bounds(offset, len(data))
+    self._check_bounds(offset, len(data))
 
-        start_lba = offset // BLOCK_SIZE_BYTES
-        end_lba = (offset + len(data) - 1) // BLOCK_SIZE_BYTES
+    start_lba = offset // BLOCK_SIZE_BYTES
+    end_lba = (offset + len(data) - 1) // BLOCK_SIZE_BYTES
 
-        idx = 0
-        for lba in range(start_lba, end_lba + 1):
-            block = bytearray(self.device.read_block_lba(lba))
+    idx = 0
+    for lba in range(start_lba, end_lba + 1):
+        block = bytearray(self.device.read_block_lba(lba))
 
-            block_offset = offset % BLOCK_SIZE_BYTES if lba == start_lba else 0
-            write_len = min(
-                BLOCK_SIZE_BYTES - block_offset,
-                len(data) - idx
+        block_offset = offset % BLOCK_SIZE_BYTES if lba == start_lba else 0
+        write_len = min(
+            BLOCK_SIZE_BYTES - block_offset,
+            len(data) - idx
         )
 
         block[block_offset:block_offset + write_len] = data[idx:idx + write_len]
-
         self.device.write_block_lba(lba, bytes(block))
-        idx += write_len
 
+        idx += write_len
 
     def trim(self, offset: int, length: int):
         self._check_bounds(offset, length)
