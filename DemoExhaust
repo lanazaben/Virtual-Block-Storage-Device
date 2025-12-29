@@ -1,0 +1,60 @@
+from device import VirtualBlockDevice
+from driver import BlockDeviceDriver
+from constants import BLOCK_SIZE_BYTES
+
+
+def main():
+    print("Initializing virtual block device...")
+    device = VirtualBlockDevice(simulate_failure=False)
+    driver = BlockDeviceDriver(device)
+
+    print("\n--- Basic Write / Read ---")
+    data = b"Hello Block Device"
+    driver.write(0, data)
+    print("Read:", driver.read(0, len(data)))
+
+    print("\n--- Trim Demonstration ---")
+    driver.trim(0, BLOCK_SIZE_BYTES)
+    print("Trimmed read:", driver.read(0, len(data)))
+
+    print("\n--- LBA → Physical Mapping ---")
+    for lba, pba in device._lba_to_pba.items():
+        print(f"LBA {lba} -> Physical Block {pba}")
+
+    print("\n--- Forcing Physical Storage Exhaustion (Same LBA) ---")
+    payload = b"X" * BLOCK_SIZE_BYTES
+    iterations = 0
+
+    try:
+        while True:
+            # Overwrite SAME LBA repeatedly
+            driver.write(0, payload)
+            iterations += 1
+
+            # Periodically trim to allow GC candidates
+            if iterations % 2 == 0:
+                driver.trim(0, BLOCK_SIZE_BYTES)
+
+    except Exception as e:
+        print("Storage exhaustion detected after", iterations, "writes")
+        print("Reason:", str(e))
+
+    print("\n--- Triggering Garbage Collection ---")
+    print("Writing again after trims...")
+    driver.write(0, b"GC!")
+
+    print("\n--- Final LBA → Physical Mapping ---")
+    for lba, pba in device._lba_to_pba.items():
+        print(f"LBA {lba} -> Physical Block {pba}")
+
+    print("\n--- GC & Device Statistics ---")
+    stats = device.get_stats()
+    for key, value in stats.items():
+        print(f"{key}: {value}")
+
+    print("\nDemo complete ✔")
+
+
+if __name__ == "__main__":
+    main()
+
